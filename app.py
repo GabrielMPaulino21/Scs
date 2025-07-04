@@ -12,16 +12,16 @@ st.set_page_config(
 
 # --- NOMES DOS ARQUIVOS MESTRE ---
 ARQUIVO_GESTAO = "Gestão de SC em aberto - Engenharia de Projetos.xlsx"
-ARQUIVO_LCP = "BUSCAR_LCP.xlsx"
 
-# --- 2. FUNÇÕES DE PROCESSAMENTO (LÓGICA PURA) ---
-# As funções agora só recebem DataFrames, sem ler arquivos dentro delas.
+# --- 2. FUNÇÕES COM A LÓGICA DO SEU PROJETO ---
+# As definições das suas funções continuam perfeitas e não precisam mudar.
+# (Vou omiti-las aqui para a resposta ser mais curta, use as mesmas que você já tem)
 
 def processar_dados_iniciais(df_cji5, df_srm, df_lcp):
     """Junta e enriquece os dados de Cji5, SRM e LCP."""
     st.write("▶️ **Etapa 1/3:** Consolidando e enriquecendo dados...")
     
-    # Lógica de 'Planilhas.py'
+    # Lógica de 'Planilhas.py' + Enriquecimento
     df_cji5['Nº doc.de referência'] = df_cji5['Nº doc.de referência'].astype(str)
     df_cji5 = df_cji5[df_cji5['Nº doc.de referência'].str.startswith('S', na=False)].copy()
     if df_cji5.empty:
@@ -49,7 +49,6 @@ def processar_dados_iniciais(df_cji5, df_srm, df_lcp):
     
     df_lancamento_bruto = pd.merge(df_agrupado, df_srm, on='SC_ID_Key', how='inner')
     
-    # Lógica de enriquecimento com LCP
     df_lcp.columns = df_lcp.columns.str.strip()
     df_lcp_essencial = df_lcp[['WBS', 'PROJECT NAME']].drop_duplicates(subset=['WBS'])
     if 'Definição do projeto' in df_lancamento_bruto.columns:
@@ -64,28 +63,21 @@ def processar_dados_iniciais(df_cji5, df_srm, df_lcp):
 def atualizar_gestao_final(df_lancamento_enriquecido, df_gestao_antiga):
     """Lógica de atualização 'cirúrgica'."""
     st.write("▶️ **Etapa 2/3:** Atualizando a planilha principal de gestão...")
-    
     chaves_de_agrupamento = ['SC ID', 'atuação do projeto']
     df_agrupado = df_lancamento_enriquecido.groupby(chaves_de_agrupamento).agg({'Denominação': lambda x: '\n'.join(x.dropna().astype(str).unique()),'SC Name': 'first', 'Created On': 'first', 'Requester': 'first','Valor Total': 'first', 'Next Approver': 'first', 'Received on': 'first','PROJECT NAME': 'first'}).reset_index()
     mapa_colunas = {'SC ID': 'SC', 'atuação do projeto': 'WBS', 'SC Name': 'DESCRIÇÃO','Denominação': 'CONTEÚDO', 'Created On': 'DATA CRIAÇÃO', 'Requester': 'REQUISITANTE','Valor Total': 'VALOR', 'Next Approver': 'PENDENTE COM','Received on': 'RECEBIDA EM', 'PROJECT NAME': 'PROJETO'}
     df_para_atualizar = df_agrupado.rename(columns=mapa_colunas)
-    
     df_para_atualizar['SC'] = pd.to_numeric(df_para_atualizar['SC'], errors='coerce').astype('Int64').astype(str)
     df_para_atualizar = df_para_atualizar[df_para_atualizar['SC'] != '<NA>']
     if 'WBS' in df_para_atualizar.columns: df_para_atualizar['WBS'] = df_para_atualizar['WBS'].str.strip()
-    
     df_gestao_antiga['SC'] = df_gestao_antiga['SC'].astype(str).str.replace('.0', '', regex=False).str.strip()
     if 'WBS' in df_gestao_antiga.columns: df_gestao_antiga['WBS'] = df_gestao_antiga['WBS'].astype(str).str.strip()
-    
     df_para_atualizar.set_index(['SC', 'WBS'], inplace=True)
     df_gestao_antiga.set_index(['SC', 'WBS'], inplace=True)
-    
     df_gestao_antiga.update(df_para_atualizar)
-    
     novas_linhas = df_para_atualizar[~df_para_atualizar.index.isin(df_gestao_antiga.index)]
     df_gestao_final = pd.concat([df_gestao_antiga, novas_linhas])
     df_gestao_final.reset_index(inplace=True)
-
     st.success("✅ Concluído: Planilha de gestão atualizada.")
     return df_gestao_final
 
@@ -117,40 +109,35 @@ def formatar_excel_para_download(df):
     st.success("✅ Concluído: Formatação aplicada.")
     return output.getvalue()
 
-
 # --- 3. INTERFACE PRINCIPAL DO APLICATIVO ---
 
 st.title("🤖 Ferramenta de Automação de Lançamentos - FollowUP GY")
+st.info(f"**Arquivo Mestre em uso:** `{ARQUIVO_GESTAO}`")
+st.markdown("---")
 
-# --- NOVA ESTRUTURA: Carregamos os arquivos mestre e de upload ANTES do botão ---
-try:
-    with st.spinner("Carregando arquivos de referência do projeto..."):
-        df_gestao_mestre = pd.read_excel(ARQUIVO_GESTAO)
+st.header("1. Carregue os arquivos de dados")
+col1, col2, col3 = st.columns(3)
+with col1:
+    upload_cji5 = st.file_uploader("1. `resultado_cji5.xlsx`", type="xlsx")
+with col2:
+    upload_srm = st.file_uploader("2. `DADOS_SRM.xlsx`", type="xlsx")
+with col3:
+    upload_lcp = st.file_uploader("3. `BUSCAR_LCP.xlsx`", type="xlsx")
 
-    st.success(f"Arquivo Mestre `{ARQUIVO_GESTAO}` carregado com sucesso.")
-    st.markdown("---")
-    st.header("1. Carregue os arquivos de dados")
+st.markdown("---")
 
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        upload_cji5 = st.file_uploader("1. `resultado_cji5.xlsx`", type="xlsx")
-    with col2:
-        upload_srm = st.file_uploader("2. `DADOS_SRM.xlsx`", type="xlsx")
-    with col3:
-        upload_lcp = st.file_uploader("3. `BUSCAR_LCP.xlsx`", type="xlsx")
-
-    st.markdown("---")
-
-    if upload_cji5 and upload_srm and upload_lcp:
-        st.header("2. Execute a automação")
-        if st.button("🚀 Processar Arquivos e Gerar Relatório Final"):
-            with st.spinner("Aguarde... A mágica está acontecendo."):
-                
-                # Lê os arquivos que o usuário enviou
+if upload_cji5 and upload_srm and upload_lcp:
+    st.header("2. Execute a automação")
+    if st.button("🚀 Processar Arquivos e Gerar Relatório Final"):
+        with st.spinner("Aguarde... A mágica está acontecendo."):
+            try:
+                # *** MUDANÇA CRÍTICA AQUI ***
+                # Nós lemos os arquivos de upload PRIMEIRO, e SÓ DEPOIS o arquivo mestre.
                 df_cji5_up = pd.read_excel(upload_cji5)
                 df_srm_up = pd.read_excel(upload_srm)
                 df_lcp_up = pd.read_excel(upload_lcp, sheet_name='Capex', header=3)
-                
+                df_gestao_mestre = pd.read_excel(ARQUIVO_GESTAO) # Lendo o mestre por último.
+
                 # Etapa 1
                 df_intermediario = processar_dados_iniciais(df_cji5_up, df_srm_up, df_lcp_up)
                 
@@ -169,10 +156,9 @@ try:
                             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                         )
                         st.balloons()
-    else:
-        st.info("Por favor, carregue os 3 arquivos necessários para habilitar o botão de processamento.")
-
-except FileNotFoundError:
-    st.error(f"ERRO CRÍTICO: O arquivo mestre '{ARQUIVO_GESTAO}' não foi encontrado no repositório do GitHub. Verifique se o nome está correto e se ele foi enviado.")
-except Exception as e:
-    st.error(f"Ocorreu um erro inesperado: {e}")
+            except FileNotFoundError:
+                st.error(f"ERRO CRÍTICO: O arquivo mestre '{ARQUIVO_GESTAO}' não foi encontrado no repositório do GitHub.")
+            except Exception as e:
+                st.error(f"Ocorreu um erro inesperado durante o processamento: {e}")
+else:
+    st.info("Por favor, carregue os 3 arquivos necessários para habilitar o botão de processamento.")
