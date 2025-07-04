@@ -14,13 +14,9 @@ st.set_page_config(
 # --- 2. SUAS FUNÇÕES ORIGINAIS (COM MÍNIMAS ADAPTAÇÕES DE I/O) ---
 
 def executar_planilhas_py(arquivo_cji5, arquivo_srm):
-    """
-    Contém a lógica EXATA do seu Planilhas.py.
-    A única mudança é que lê os arquivos da memória e retorna o resultado em vez de salvar.
-    """
+    """Contém a lógica EXATA do seu Planilhas.py."""
     st.write("▶️ Etapa 1: Processando `Planilhas.py`...")
     
-    # --- Início da sua lógica original ---
     df_cji5 = pd.read_excel(arquivo_cji5)
     df_srm = pd.read_excel(arquivo_srm)
     
@@ -38,10 +34,11 @@ def executar_planilhas_py(arquivo_cji5, arquivo_srm):
     coluna_valor_correta = 'Valor/moed.transação'
     df_cji5[coluna_valor_correta] = pd.to_numeric(df_cji5[coluna_valor_correta], errors='coerce').fillna(0)
     
+    # *** A CORREÇÃO ESTÁ AQUI ***
     agg_funcs = {
         'Material': lambda x: ';\n'.join(x.unique()),
         'Denominação': lambda x: ';\n'.join(x.unique()),
-        'Quantidade total': lambda x: ';\n'.join(x),
+        'Quantidade total': lambda x: ';\n'.join(x.astype(str)), # <--- CORRIGIDO
         coluna_valor_correta: 'sum',
         'Nº doc.de referência': 'first'
     }
@@ -55,12 +52,12 @@ def executar_planilhas_py(arquivo_cji5, arquivo_srm):
     df_srm['SC_ID_Key'] = df_srm['SC_ID_Key'].astype(int).astype(str)
     df_srm = df_srm.drop_duplicates(subset=['SC_ID_Key'], keep='first')
     
-    df_final = pd.merge(df_agrupado, df_srm, on='SC_ID_Key', how='inner')
+    df_final = pd.merge(df_agrupado,df_srm,on='SC_ID_Key',how='inner')
     
     if 'Definição do projeto' in df_final.columns: df_final.rename(columns={'Definição do projeto': 'atuação do projeto'}, inplace=True)
     if coluna_valor_correta in df_final.columns: df_final.rename(columns={coluna_valor_correta: 'Valor Total'}, inplace=True)
     
-    colunas_finais = ['atuação do projeto', 'SC ID', 'Material', 'Denominação', 'Quantidade total', 'Valor Total', 'Nº doc.de referência', 'Created On', 'SC Name', 'Next Approver', 'SC Approval status', 'Received on', 'Requester']
+    colunas_finais = ['atuação do projeto', 'SC ID', 'Material', 'Denominação', 'Quantidade total','Valor Total', 'Nº doc.de referência', 'Created On', 'SC Name','Next Approver', 'SC Approval status', 'Received on', 'Requester']
     colunas_presentes = [col for col in colunas_finais if col in df_final.columns]
     df_final = df_final[colunas_presentes]
     
@@ -69,15 +66,10 @@ def executar_planilhas_py(arquivo_cji5, arquivo_srm):
 
 
 def executar_lancamento_fim_py(df_lancamento, arquivo_lcp, arquivo_resumo):
-    """
-    Contém a lógica EXATA do seu LançamentoFIM.py.
-    As únicas mudanças são na leitura e salvamento de arquivos.
-    """
+    """Contém a lógica EXATA do seu LançamentoFIM.py."""
     st.write("▶️ Etapa 2: Processando `LançamentoFIM.py`...")
-    
     df_lcp = pd.read_excel(arquivo_lcp, sheet_name='Capex', header=3, dtype={'WBS': str})
     
-    # --- Início da sua lógica original ---
     df_lcp.columns = df_lcp.columns.str.strip()
     if 'columns' in df_lcp and df_lcp.columns.has_duplicates: df_lcp = df_lcp.loc[:, ~df_lcp.columns.duplicated()]
     if not df_lancamento.empty:
@@ -150,16 +142,18 @@ def executar_lancamento_fim_py(df_lancamento, arquivo_lcp, arquivo_resumo):
             letra_col = chr(ord('A') + col_map[col_name] - 1)
             sheet.column_dimensions[letra_col].width = width
             
-    # Prepara o arquivo para download
     virtual_workbook = io.BytesIO()
     workbook.save(virtual_workbook)
     st.success("✅ `LançamentoFIM.py` executado!")
     return virtual_workbook.getvalue()
 
+
 # --- 3. INTERFACE DO APLICATIVO ---
 st.title("🤖 Ferramenta de Automação de Lançamentos - FollowUP GY")
 st.markdown("---")
-st.header("1. Carregue os 4 arquivos necessários")
+
+st.header("1. Carregue TODOS os arquivos necessários")
+st.write("Por favor, forneça a planilha de Gestão que será atualizada e os 3 arquivos de dados do dia.")
 
 col1, col2 = st.columns(2)
 with col1:
