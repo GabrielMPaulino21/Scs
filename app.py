@@ -34,11 +34,10 @@ def executar_planilhas_py(arquivo_cji5, arquivo_srm):
     coluna_valor_correta = 'Valor/moed.transação'
     df_cji5[coluna_valor_correta] = pd.to_numeric(df_cji5[coluna_valor_correta], errors='coerce').fillna(0)
     
-    # *** A CORREÇÃO ESTÁ AQUI ***
     agg_funcs = {
         'Material': lambda x: ';\n'.join(x.unique()),
         'Denominação': lambda x: ';\n'.join(x.unique()),
-        'Quantidade total': lambda x: ';\n'.join(x.astype(str)), # <--- CORRIGIDO
+        'Quantidade total': lambda x: ';\n'.join(x.astype(str)), # CORRIGIDO
         coluna_valor_correta: 'sum',
         'Nº doc.de referência': 'first'
     }
@@ -74,7 +73,8 @@ def executar_lancamento_fim_py(df_lancamento, arquivo_lcp, arquivo_resumo):
     if 'columns' in df_lcp and df_lcp.columns.has_duplicates: df_lcp = df_lcp.loc[:, ~df_lcp.columns.duplicated()]
     if not df_lancamento.empty:
         df_lancamento.dropna(subset=['SC ID', 'atuação do projeto'], inplace=True)
-        df_lancamento['SC ID'] = df_lancamento['SC ID'].str.strip()
+        # *** A CORREÇÃO ESTÁ AQUI ***
+        df_lancamento['SC ID'] = df_lancamento['SC ID'].astype(str).str.strip() # GARANTE QUE SEJA TEXTO
         df_lancamento['atuação do projeto'] = df_lancamento['atuação do projeto'].str.strip()
         df_lancamento = df_lancamento[df_lancamento['SC ID'] != '']
     
