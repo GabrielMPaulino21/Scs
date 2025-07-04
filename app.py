@@ -10,18 +10,21 @@ st.set_page_config(
     layout="wide"
 )
 
-# --- NOMES DOS ARQUIVOS MESTRE (LIDOS DO GITHUB) ---
+# --- NOME DO ARQUIVO MESTRE (LIDO DO GITHUB) ---
 ARQUIVO_GESTAO = "Gestão de SC em aberto - Engenharia de Projetos.xlsx"
-ARQUIVO_LCP = "BUSCAR_LCP.xlsx"
 
 # --- 2. FUNÇÕES COM A LÓGICA DO SEU PROJETO ---
 
-def processar_planilhas_py(arquivo_cji5, arquivo_srm, df_lcp):
-    """Lógica do seu script 'Planilhas.py', agora com a correção."""
-    st.write("▶️ **Etapa 1/3:** Consolidando e enriquecendo dados...")
+def processar_dados_iniciais(arquivo_cji5, arquivo_srm, arquivo_lcp):
+    """
+    Esta função agora une a lógica do Planilhas.py com a parte de 
+    enriquecimento do LançamentoFIM.py.
+    """
+    st.write("▶️ **Etapa 1/2:** Consolidando e enriquecendo dados...")
     try:
         df_cji5 = pd.read_excel(arquivo_cji5)
         df_srm = pd.read_excel(arquivo_srm)
+        df_lcp = pd.read_excel(arquivo_lcp, sheet_name='Capex', header=3, dtype={'WBS': str})
     except Exception as e:
         st.error(f"ERRO ao ler os arquivos de upload: {e}"); return None
 
@@ -38,9 +41,7 @@ def processar_planilhas_py(arquivo_cji5, arquivo_srm, df_lcp):
     
     coluna_valor_correta = 'Valor/moed.transação'
     if coluna_valor_correta not in df_cji5.columns:
-        st.error(f"ERRO: A coluna '{coluna_valor_correta}' não foi encontrada no arquivo Cji5. Verifique o arquivo de entrada.")
-        return None
-    
+        st.error(f"ERRO: A coluna '{coluna_valor_correta}' não foi encontrada no arquivo Cji5."); return None
     df_cji5[coluna_valor_correta] = pd.to_numeric(df_cji5[coluna_valor_correta], errors='coerce').fillna(0)
     
     agg_funcs = {'Material': lambda x: ';\n'.join(x.dropna().astype(str).unique()),'Denominação': lambda x: ';\n'.join(x.dropna().astype(str).unique()),'Quantidade total': lambda x: ';\n'.join(x.dropna().astype(str)),coluna_valor_correta: 'sum','Nº doc.de referência': 'first'}
@@ -55,26 +56,21 @@ def processar_planilhas_py(arquivo_cji5, arquivo_srm, df_lcp):
     
     df_lancamento_bruto = pd.merge(df_agrupado, df_srm, on='SC_ID_Key', how='inner')
     
-    # --- Enriquecimento com LCP ---
+    # --- Lógica de enriquecimento (do LançamentoFIM.py) ---
     df_lcp.columns = df_lcp.columns.str.strip()
     df_lcp_essencial = df_lcp[['WBS', 'PROJECT NAME']].drop_duplicates(subset=['WBS'])
     if 'Definição do projeto' in df_lancamento_bruto.columns:
-        df_lancamento_bruto.rename(columns={'Definição do projeto': 'atuação do projeto'}, inplace=True)
-    df_lancamento_enriquecido = pd.merge(df_lancamento_bruto, df_lcp_essencial, left_on='atuação do projeto', right_on='WBS', how='left')
+        df_lancamento_bruto.rename(columns={'Definição do projeto': 'atuação do projeto', 'Valor/moed.transação': 'Valor Total'}, inplace=True)
     
-    # *** A CORREÇÃO ESTÁ AQUI ***
-    # Renomeamos a coluna de valor ANTES de retornar o resultado.
-    if coluna_valor_correta in df_lancamento_enriquecido.columns:
-        df_lancamento_enriquecido.rename(columns={coluna_valor_correta: 'Valor Total'}, inplace=True)
+    df_lancamento_enriquecido = pd.merge(df_lancamento_bruto, df_lcp_essencial, left_on='atuação do projeto', right_on='WBS', how='left')
 
     st.success("✅ Concluído: Dados consolidados e enriquecidos.")
     return df_lancamento_enriquecido
 
-# As outras duas funções (atualizar_gestao_final e formatar_excel_para_download) continuam
-# exatamente as mesmas do código anterior. O resto do código da interface também.
+
 def atualizar_gestao_final(df_lancamento_enriquecido, df_gestao_antiga):
-    """Lógica do seu script 'LançamentoFIM.py'."""
-    st.write("▶️ **Etapa 2/3:** Atualizando a planilha principal de gestão...")
+    """Lógica de atualização 'cirúrgica' do LançamentoFIM.py."""
+    st.write("▶️ **Etapa 2/2:** Atualizando a planilha principal de gestão...")
     
     chaves_de_agrupamento = ['SC ID', 'atuação do projeto']
     df_agrupado = df_lancamento_enriquecido.groupby(chaves_de_agrupamento).agg({'Denominação': lambda x: '\n'.join(x.dropna().astype(str).unique()),'SC Name': 'first', 'Created On': 'first', 'Requester': 'first','Valor Total': 'first', 'Next Approver': 'first', 'Received on': 'first','PROJECT NAME': 'first'}).reset_index()
@@ -84,12 +80,15 @@ def atualizar_gestao_final(df_lancamento_enriquecido, df_gestao_antiga):
     df_para_atualizar['SC'] = pd.to_numeric(df_para_atualizar['SC'], errors='coerce').astype('Int64').astype(str)
     df_para_atualizar = df_para_atualizar[df_para_atualizar['SC'] != '<NA>']
     if 'WBS' in df_para_atualizar.columns: df_para_atualizar['WBS'] = df_para_atualizar['WBS'].str.strip()
+    
     df_gestao_antiga['SC'] = df_gestao_antiga['SC'].astype(str).str.replace('.0', '', regex=False).str.strip()
     if 'WBS' in df_gestao_antiga.columns: df_gestao_antiga['WBS'] = df_gestao_antiga['WBS'].astype(str).str.strip()
     
     df_para_atualizar.set_index(['SC', 'WBS'], inplace=True)
     df_gestao_antiga.set_index(['SC', 'WBS'], inplace=True)
+    
     df_gestao_antiga.update(df_para_atualizar)
+    
     novas_linhas = df_para_atualizar[~df_para_atualizar.index.isin(df_gestao_antiga.index)]
     df_gestao_final = pd.concat([df_gestao_antiga, novas_linhas])
     df_gestao_final.reset_index(inplace=True)
@@ -97,9 +96,10 @@ def atualizar_gestao_final(df_lancamento_enriquecido, df_gestao_antiga):
     st.success("✅ Concluído: Planilha de gestão atualizada.")
     return df_gestao_final
 
+
 def formatar_excel_para_download(df):
     """Aplica a formatação 'Goodyear' na planilha final."""
-    st.write("▶️ **Etapa 3/3:** Aplicando formatação profissional...")
+    st.write("▶️ **Finalizando:** Aplicando formatação profissional...")
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
         df.to_excel(writer, index=False, sheet_name='FollowUP_SCs')
@@ -127,11 +127,11 @@ def formatar_excel_para_download(df):
 
 # --- 3. INTERFACE DO APLICATIVO ---
 st.title("🤖 Ferramenta de Automação de Lançamentos - FollowUP GY")
-st.info(f"**Arquivos Mestre em uso:** `{ARQUIVO_GESTAO}` e `{ARQUIVO_LCP}`")
+st.info(f"**Arquivo Mestre em uso:** `{ARQUIVO_GESTAO}`")
 st.markdown("---")
 st.header("1. Carregue os arquivos de dados")
 
-# Voltamos a pedir os 3 arquivos, como decidido
+# Pedimos os 3 arquivos para o usuário
 col1, col2, col3 = st.columns(3)
 with col1:
     upload_cji5 = st.file_uploader("1. `resultado_cji5.xlsx`", type="xlsx")
@@ -147,14 +147,18 @@ if upload_cji5 and upload_srm and upload_lcp:
     if st.button("🚀 Processar Arquivos e Gerar Relatório Final"):
         with st.spinner("Aguarde... A mágica está acontecendo."):
             try:
+                # Carregamos o arquivo mestre do GitHub aqui
                 df_gestao_mestre = pd.read_excel(ARQUIVO_GESTAO)
-                
-                df_intermediario = processar_planilhas_py(upload_cji5, upload_srm)
+
+                # Etapa 1: Chama a primeira função com os 3 uploads
+                df_intermediario = processar_dados_iniciais(upload_cji5, upload_srm, upload_lcp)
                 
                 if df_intermediario is not None and not df_intermediario.empty:
-                    df_final = lancamento_fim_py(df_intermediario, upload_lcp, df_gestao_mestre)
+                    # Etapa 2: Chama a segunda função apenas com o resultado da primeira e o mestre
+                    df_final = atualizar_gestao_final(df_intermediario, df_gestao_mestre)
 
                     if df_final is not None:
+                        # Etapa 3: Formatação
                         dados_excel_formatado = formatar_excel_para_download(df_final)
                         st.header("3. Download do Relatório Atualizado")
                         st.download_button(
