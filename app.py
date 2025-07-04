@@ -10,29 +10,24 @@ st.set_page_config(
     layout="wide"
 )
 
-# --- NOMES DOS ARQUIVOS MESTRE (LIDOS DO GITHUB) ---
+# --- NOME DO ARQUIVO MESTRE (LIDO DO GITHUB) ---
 ARQUIVO_GESTAO = "Gestão de SC em aberto - Engenharia de Projetos.xlsx"
-ARQUIVO_LCP = "BUSCAR_LCP.xlsx"
 
 # --- 2. FUNÇÕES COM A LÓGICA DO SEU PROJETO ---
 
-def processar_planilhas_py(arquivo_cji5, arquivo_srm, df_lcp):
-    """
-    Lógica do seu script 'Planilhas.py', agora recebendo o LCP.
-    """
-    st.write("▶️ **Etapa 1/3:** Consolidando e enriquecendo dados...")
+def processar_planilhas_py(arquivo_cji5, arquivo_srm):
+    """Lógica do seu script 'Planilhas.py'."""
+    st.write("▶️ **Etapa 1/3:** Consolidando dados de Cji5 e SRM...")
     try:
         df_cji5 = pd.read_excel(arquivo_cji5)
         df_srm = pd.read_excel(arquivo_srm)
     except Exception as e:
-        st.error(f"ERRO ao ler os arquivos de upload: {e}"); return None
+        st.error(f"ERRO ao ler os arquivos iniciais: {e}"); return None
 
-    # --- Lógica de 'Planilhas.py' ---
     df_cji5['Nº doc.de referência'] = df_cji5['Nº doc.de referência'].astype(str)
     df_cji5 = df_cji5[df_cji5['Nº doc.de referência'].str.startswith('S', na=False)].copy()
     if df_cji5.empty:
         st.warning("Nenhuma SC encontrada na planilha Cji5."); return pd.DataFrame()
-
     df_cji5['SC_ID_Key'] = df_cji5['Nº doc.de referência'].str.replace('S', '', n=1, regex=False).str.strip()
     df_cji5['SC_ID_Key'] = pd.to_numeric(df_cji5['SC_ID_Key'], errors='coerce')
     df_cji5.dropna(subset=['SC_ID_Key'], inplace=True)
@@ -52,47 +47,40 @@ def processar_planilhas_py(arquivo_cji5, arquivo_srm, df_lcp):
     df_srm['SC_ID_Key'] = df_srm['SC_ID_Key'].astype(int).astype(str)
     df_srm = df_srm.drop_duplicates(subset=['SC_ID_Key'], keep='first')
     
-    df_lancamento_bruto = pd.merge(df_agrupado, df_srm, on='SC_ID_Key', how='inner')
-    
-    # --- Enriquecimento com LCP (movido para cá) ---
+    df_final_etapa1 = pd.merge(df_agrupado, df_srm, on='SC_ID_Key', how='inner')
+    st.success("✅ Concluído: 'Planilhas.py'")
+    return df_final_etapa1
+
+
+def lancamento_fim_py(df_lancamento_bruto, arquivo_lcp, df_gestao_antiga):
+    """Lógica do seu script 'LançamentoFIM.py'."""
+    st.write("▶️ **Etapa 2/3:** Iniciando atualização final...")
+    try:
+        df_lcp = pd.read_excel(arquivo_lcp, sheet_name='Capex', header=3, dtype={'WBS': str})
+    except Exception as e:
+        st.error(f"ERRO ao ler o arquivo LCP: {e}"); return None
+
+    if 'Definição do projeto' in df_lancamento_bruto.columns: df_lancamento_bruto.rename(columns={'Definição do projeto': 'atuação do projeto'}, inplace=True)
     df_lcp.columns = df_lcp.columns.str.strip()
     df_lcp_essencial = df_lcp[['WBS', 'PROJECT NAME']].drop_duplicates(subset=['WBS'])
-    if 'Definição do projeto' in df_lancamento_bruto.columns:
-        df_lancamento_bruto.rename(columns={'Definição do projeto': 'atuação do projeto'}, inplace=True)
     df_lancamento_enriquecido = pd.merge(df_lancamento_bruto, df_lcp_essencial, left_on='atuação do projeto', right_on='WBS', how='left')
-
-    st.success("✅ Concluído: Dados consolidados e enriquecidos.")
-    return df_lancamento_enriquecido
-
-
-def atualizar_gestao_final(df_lancamento_enriquecido, df_gestao_antiga):
-    """
-    Lógica do seu script 'LançamentoFIM.py'.
-    """
-    st.write("▶️ **Etapa 2/3:** Atualizando a planilha principal de gestão...")
     
-    # --- Agrupamento, Mapeamento e Atualização ---
     chaves_de_agrupamento = ['SC ID', 'atuação do projeto']
     df_agrupado = df_lancamento_enriquecido.groupby(chaves_de_agrupamento).agg({'Denominação': lambda x: '\n'.join(x.dropna().astype(str).unique()),'SC Name': 'first', 'Created On': 'first', 'Requester': 'first','Valor Total': 'first', 'Next Approver': 'first', 'Received on': 'first','PROJECT NAME': 'first'}).reset_index()
     mapa_colunas = {'SC ID': 'SC', 'atuação do projeto': 'WBS', 'SC Name': 'DESCRIÇÃO','Denominação': 'CONTEÚDO', 'Created On': 'DATA CRIAÇÃO', 'Requester': 'REQUISITANTE','Valor Total': 'VALOR', 'Next Approver': 'PENDENTE COM','Received on': 'RECEBIDA EM', 'PROJECT NAME': 'PROJETO'}
     df_para_atualizar = df_agrupado.rename(columns=mapa_colunas)
-    
-    # Limpeza e conversão de tipos
     df_para_atualizar['SC'] = pd.to_numeric(df_para_atualizar['SC'], errors='coerce').astype('Int64').astype(str)
     df_para_atualizar = df_para_atualizar[df_para_atualizar['SC'] != '<NA>']
     if 'WBS' in df_para_atualizar.columns: df_para_atualizar['WBS'] = df_para_atualizar['WBS'].str.strip()
     df_gestao_antiga['SC'] = df_gestao_antiga['SC'].astype(str).str.replace('.0', '', regex=False).str.strip()
     if 'WBS' in df_gestao_antiga.columns: df_gestao_antiga['WBS'] = df_gestao_antiga['WBS'].astype(str).str.strip()
-    
-    # *** A LÓGICA CIRÚRGICA USANDO PANDAS ***
     df_para_atualizar.set_index(['SC', 'WBS'], inplace=True)
     df_gestao_antiga.set_index(['SC', 'WBS'], inplace=True)
     df_gestao_antiga.update(df_para_atualizar)
     novas_linhas = df_para_atualizar[~df_para_atualizar.index.isin(df_gestao_antiga.index)]
     df_gestao_final = pd.concat([df_gestao_antiga, novas_linhas])
     df_gestao_final.reset_index(inplace=True)
-
-    st.success("✅ Concluído: Planilha de gestão atualizada.")
+    st.success("✅ Concluído: 'LançamentoFIM.py'")
     return df_gestao_final
 
 
@@ -126,37 +114,34 @@ def formatar_excel_para_download(df):
 
 # --- 3. INTERFACE DO APLICATIVO ---
 st.title("🤖 Ferramenta de Automação de Lançamentos - FollowUP GY")
-st.info(f"**Arquivos Mestre em uso:** `{ARQUIVO_GESTAO}` e `{ARQUIVO_LCP}`")
+st.info(f"**Arquivo Mestre em uso:** `{ARQUIVO_GESTAO}`")
 st.markdown("---")
-st.header("1. Carregue os arquivos de dados do dia")
+st.header("1. Carregue os arquivos de dados")
 
-# Pedimos apenas 2 arquivos para o usuário
-col1, col2 = st.columns(2)
+# VOLTAMOS A PEDIR 3 ARQUIVOS
+col1, col2, col3 = st.columns(3)
 with col1:
     upload_cji5 = st.file_uploader("1. `resultado_cji5.xlsx`", type="xlsx")
 with col2:
     upload_srm = st.file_uploader("2. `DADOS_SRM.xlsx`", type="xlsx")
+with col3:
+    upload_lcp = st.file_uploader("3. `BUSCAR_LCP.xlsx`", type="xlsx")
 
 st.markdown("---")
 
-if upload_cji5 and upload_srm:
+if upload_cji5 and upload_srm and upload_lcp:
     st.header("2. Execute a automação")
     if st.button("🚀 Processar Arquivos e Gerar Relatório Final"):
         with st.spinner("Aguarde... A mágica está acontecendo."):
             try:
-                # Carregamos os arquivos mestre do GitHub aqui
-                df_lcp_mestre = pd.read_excel(ARQUIVO_LCP, sheet_name='Capex', header=3)
                 df_gestao_mestre = pd.read_excel(ARQUIVO_GESTAO)
-
-                # Etapa 1
-                df_intermediario = processar_planilhas_py(upload_cji5, upload_srm, df_lcp_mestre)
+                
+                df_intermediario = processar_planilhas_py(upload_cji5, upload_srm)
                 
                 if df_intermediario is not None and not df_intermediario.empty:
-                    # Etapa 2
-                    df_final = atualizar_gestao_final(df_intermediario, df_gestao_mestre)
+                    df_final = lancamento_fim_py(df_intermediario, upload_lcp, df_gestao_mestre)
 
                     if df_final is not None:
-                        # Etapa 3
                         dados_excel_formatado = formatar_excel_para_download(df_final)
                         st.header("3. Download do Relatório Atualizado")
                         st.download_button(
@@ -166,9 +151,9 @@ if upload_cji5 and upload_srm:
                             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                         )
                         st.balloons()
-            except FileNotFoundError as e:
-                st.error(f"ERRO: Um arquivo mestre não foi encontrado no repositório. Verifique se '{e.filename}' foi enviado ao GitHub.")
+            except FileNotFoundError:
+                st.error(f"ERRO: O arquivo mestre '{ARQUIVO_GESTAO}' não foi encontrado no repositório. Verifique se ele foi enviado ao GitHub.")
             except Exception as e:
                 st.error(f"Ocorreu um erro inesperado durante o processamento: {e}")
 else:
-    st.info("Por favor, carregue os 2 arquivos necessários para habilitar o botão de processamento.")
+    st.info("Por favor, carregue os 3 arquivos necessários para habilitar o botão de processamento.")
