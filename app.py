@@ -73,8 +73,7 @@ def executar_lancamento_fim_py(df_lancamento, arquivo_lcp, arquivo_resumo):
     if 'columns' in df_lcp and df_lcp.columns.has_duplicates: df_lcp = df_lcp.loc[:, ~df_lcp.columns.duplicated()]
     if not df_lancamento.empty:
         df_lancamento.dropna(subset=['SC ID', 'atuação do projeto'], inplace=True)
-        # *** A CORREÇÃO ESTÁ AQUI ***
-        df_lancamento['SC ID'] = df_lancamento['SC ID'].astype(str).str.strip() # GARANTE QUE SEJA TEXTO
+        df_lancamento['SC ID'] = df_lancamento['SC ID'].astype(str).str.strip()
         df_lancamento['atuação do projeto'] = df_lancamento['atuação do projeto'].str.strip()
         df_lancamento = df_lancamento[df_lancamento['SC ID'] != '']
     
@@ -92,6 +91,11 @@ def executar_lancamento_fim_py(df_lancamento, arquivo_lcp, arquivo_resumo):
     df_atualizacao = df_agrupado.rename(columns=mapa_colunas)
     
     if not df_atualizacao.empty:
+        # Garante que as colunas de data sejam do tipo datetime
+        for col_data in ['DATA CRIAÇÃO', 'RECEBIDA EM']:
+            if col_data in df_atualizacao.columns:
+                df_atualizacao[col_data] = pd.to_datetime(df_atualizacao[col_data], errors='coerce')
+
         df_atualizacao['SC'] = pd.to_numeric(df_atualizacao['SC'], errors='coerce').astype('Int64').astype(str)
         df_atualizacao = df_atualizacao[df_atualizacao['SC'] != '<NA>']
         
@@ -132,10 +136,26 @@ def executar_lancamento_fim_py(df_lancamento, arquivo_lcp, arquivo_resumo):
             cell.border = borda_fina; header_da_celula = sheet.cell(row=1, column=cell.column).value
             if header_da_celula in colunas_com_quebra: cell.alignment = alinhamento_central_com_quebra
             else: cell.alignment = alinhamento_central_sem_quebra
+            
+    # Formatação de moeda
     if 'VALOR' in col_map:
         letra_col_valor = chr(ord('A') + col_map['VALOR'] - 1)
         for cell in sheet[letra_col_valor][1:]:
             if isinstance(cell.value, (int, float)): cell.number_format = 'R$ #,##0.00'
+            
+    # *** NOVA SEÇÃO - FORMATAÇÃO DE DATA ***
+    formato_data = 'DD/MM/YYYY'
+    colunas_data = ['DATA CRIAÇÃO', 'RECEBIDA EM']
+    for nome_coluna in colunas_data:
+        if nome_coluna in col_map:
+            letra_col_data = chr(ord('A') + col_map[nome_coluna] - 1)
+            # Itera pelas células da coluna, a partir da segunda linha
+            for cell in sheet[letra_col_data][1:]:
+                # Aplica o formato de data desejado
+                if cell.value: # Apenas se a célula não estiver vazia
+                    cell.number_format = formato_data
+
+    # Ajuste de largura das colunas
     larguras = {'SC': 15, 'WBS': 25, 'PROJETO': 45, 'DESCRIÇÃO': 45, 'CONTEÚDO': 50, 'VALOR': 18, 'DATA CRIAÇÃO': 18, 'REQUISITANTE': 25, 'RECEBIDA EM': 18, 'PENDENTE COM': 25, 'STATUS': 15, 'OK': 10, 'COMENTARIO': 50, 'Complemento dos materiais': 50}
     for col_name, width in larguras.items():
         if col_name in col_map:
